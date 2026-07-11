@@ -23,6 +23,9 @@ MAIN_MENU_BUTTONS = [
         Button.inline("📊 System Status",    b"menu:status"),
         Button.inline("👑 Super Users",      b"menu:super_users"),
     ],
+    [
+        Button.inline("🗄️ DB Dashboard",    b"menu:db"),
+    ],
 ]
 
 
