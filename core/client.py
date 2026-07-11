@@ -1,6 +1,6 @@
 import sys
 from telethon import TelegramClient
-from telethon.sessions import StringSession
+from telethon.sessions import StringSession, MemorySession
 import config
 from core.logger import logger
 
@@ -27,11 +27,14 @@ else:
     )
 
 # Initialize bot client if BOT_TOKEN is present
+# Use MemorySession — bot tokens re-authenticate every restart,
+# so no persistent session file is needed. This also prevents
+# "database is locked" errors from SQLite session file contention.
 bot_client = None
 if config.BOT_TOKEN:
     logger.info("Initializing Assistant Bot client...")
     bot_client = TelegramClient(
-        "data/assistant_bot",
+        MemorySession(),
         config.API_ID,
         config.API_HASH
     )
