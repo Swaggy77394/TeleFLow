@@ -84,12 +84,16 @@ async def show_status(event):
     from core.client import client
     ub_status = "🟢 Online" if client.is_connected() else "🔴 Offline"
 
+    from database.database import get_db_status
+    db_name, db_latency = get_db_status()
+
     text = (
         "📊 **TeleFlow System Status:**\n\n"
         f"• **UserBot Engine:** {ub_status}\n"
         f"• **Uptime:** `{uptime}`\n"
         f"• **Active Rules:** `{active_count}` / `{len(rules)}`\n"
-        f"• **Database:** `Connected` ✅\n\n"
+        f"• **Database Engine:** `{db_name}`\n"
+        f"• **Database Ping:** `{db_latency}`\n\n"
         "*(Real-time)*"
     )
     buttons = [
@@ -396,11 +400,21 @@ async def show_chats(event):
     await event.edit(text, buttons=[[Button.inline("🔙 Back", b"menu:back")]])
 
 
-# ─── Callback router ─────────────────────────────────────────────────────────
-
 def register(bot_client):
     @bot_client.on(events.CallbackQuery)
     async def callback_handler(event):
+        from telethon.errors import MessageNotModifiedError
+        try:
+            await process_callback(event)
+        except MessageNotModifiedError:
+            try:
+                await event.answer()
+            except Exception:
+                pass
+        except Exception as e:
+            logger.error(f"Unhandled exception on callback_handler: {e}", exc_info=True)
+
+    async def process_callback(event):
         if not await is_bot_owner(event):
             await event.answer("⚠️ Unauthorized!", alert=True)
             return
@@ -607,4 +621,37 @@ def register(bot_client):
             from assistant.regex_conversation import conversations
             conversations.pop(event.sender_id, None)
             await show_menu(event)
+
+        # ── Database Dashboard ─────────────────────────────────────────────
+        elif data == b"menu:db":
+            from assistant.db_dashboard import show_db_overview
+            await show_db_overview(event)
+
+        elif data == b"db:forwards":
+            from assistant.db_dashboard import show_db_forwards
+            await show_db_forwards(event)
+
+        elif data == b"db:super_users":
+            from assistant.db_dashboard import show_db_super_users
+            await show_db_super_users(event)
+
+        elif data == b"db:replacements":
+            from assistant.db_dashboard import show_db_replacements
+            await show_db_replacements(event)
+
+        elif data == b"db:regex_rules":
+            from assistant.db_dashboard import show_db_regex_rules
+            await show_db_regex_rules(event)
+
+        elif data == b"db:header_footer":
+            from assistant.db_dashboard import show_db_header_footer
+            await show_db_header_footer(event)
+
+        elif data == b"db:message_map":
+            from assistant.db_dashboard import show_db_message_map
+            await show_db_message_map(event)
+
+        elif data == b"db:backup":
+            from assistant.db_dashboard import do_db_backup
+            await do_db_backup(event)
 
