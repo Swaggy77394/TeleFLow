@@ -9,7 +9,7 @@ from database.database import (
     get_media_filters
 )
 from core.logger import logger
-from modules.forwarder import format_inline_buttons
+from modules.forwarder import format_inline_buttons, apply_text_transformations
 import re
 
 def register(client):
@@ -30,24 +30,14 @@ def register(client):
                 continue
 
             try:
-                # Get current message text/caption
-                text = event.message.text or ""
+                # Get current raw message text/caption and its formatting entities
+                original_text = event.message.message or ""
+                original_entities = event.message.entities or []
 
-                # Apply plain replacements
+                # Fetch config and transformations details
                 replacements = get_replacements(chat_id, target_id)
-                for find, replace in replacements:
-                    text = text.replace(find, replace)
-
-                # Apply regex rules (only if enabled for this source)
-                if is_regex_enabled(chat_id):
-                    for rule_name, pattern, replacement in get_regex_rules(chat_id):
-                        try:
-                            text = re.sub(pattern, replacement, text)
-                        except re.error as rx_err:
-                            logger.warning(
-                                f"Edit sync msg {event.id}: invalid regex '{pattern}' "
-                                f"(rule '{rule_name}') — skipping. Error: {rx_err}"
-                            )
+                regex_active = is_regex_enabled(chat_id) and bool(get_regex_rules(chat_id))
+                regex_rules = get_regex_rules(chat_id) if is_regex_enabled(chat_id) else []
 
                 # Fetch media filters for the target link
                 filters = get_media_filters(chat_id, target_id)
@@ -55,21 +45,35 @@ def register(client):
 
                 # Append Inline Buttons as text links if filter is ON
                 has_inline_buttons = bool(event.message.reply_markup)
+                buttons_text = ""
                 if has_inline_buttons and btn_allowed:
                     buttons_text = format_inline_buttons(event.message.reply_markup)
-                    if buttons_text:
-                        text = f"{text}{buttons_text}"
 
-                # Prepend Header & Append Footer
+                # Fetch Header & Footer
                 header, footer = get_header_footer(chat_id, target_id)
-                if header:
-                    text = f"{header}\n\n{text}"
-                if footer:
-                    text = f"{text}\n\n{footer}"
 
-                # Update target message text or caption
-                # Set buttons=None because normal userbot accounts cannot send actual inline markups
-                await event.client.edit_message(target_id, target_msg_id, text, buttons=None)
+                # Transform text and shift formatting entities correctly
+                transformed_text, entities_to_send = apply_text_transformations(
+                    original_text, original_entities,
+                    replacements, regex_active,
+                    is_regex_enabled(chat_id), regex_rules,
+                    header, footer, buttons_text,
+                    chat_id, event.id
+                )
+
+                # Update target message text or caption preserving entities
+                # Set parse_mode logic same as copy_message:
+                # - entities present -> parse_mode=None (don't double-parse, preserve premium emoji)
+                # - entities absent  -> parse_mode='md' (so **bold**/__italic__ render correctly)
+                parse_mode = None if entities_to_send else 'md'
+                await event.client.edit_message(
+                    target_id,
+                    target_msg_id,
+                    transformed_text,
+                    formatting_entities=entities_to_send,
+                    parse_mode=parse_mode,
+                    buttons=None
+                )
                 logger.info(f"Edited synced message {event.id} in target {target_id}")
             except MessageNotModifiedError:
                 logger.debug(
